@@ -135,6 +135,7 @@ independently with tweak 256) is:
 
 ```
 ironykeys create  <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
+    (until M3, create always behaves as --fs none)
 ironykeys open    <vault> [<mountpoint>] [--read-only] [--pim N]
 ironykeys close   <vault|name>
 ironykeys status  [<vault>] [--quiet]
@@ -238,6 +239,13 @@ Notes kept for a later revisit:
 
 Each row runs for exFAT and ext4, with and without a PIM.
 
+Run it with:
+
+```
+go test -c -tags interop -o interop.test ./internal/interop
+sudo ./interop.test -test.v
+```
+
 ### 7.3 Failure tests
 - Primary header overwritten with random bytes → opens via backup, exit 6.
 - Both headers destroyed → exit 3, nothing mounted.
@@ -263,7 +271,7 @@ Each row runs for exFAT and ext4, with and without a PIM.
 |---|---|---|
 | M0 | Reference vault + field check | DONE 2026-11-16. All fields confirmed; one correction (key area padding is zero) |
 | M1 | `verify`, `info` | DONE 2026-11-16. Reads the VeraCrypt-made fixture; unit tests pass |
-| M2 | `create --fs none` | VeraCrypt and cryptsetup accept the result |
+| M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
 | M3 | `open`, `close`, `status`, formatting | Full interop matrix passes on piapps2 |
 | M4 | Release | arm64 + amd64 binaries, README with threat model |
 | M5 | Fleet use | Real vault created, backup job extended, restore test passed |

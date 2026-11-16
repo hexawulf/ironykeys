@@ -5,3 +5,4 @@
 *.vc
 !testdata/*.vc
 *.bak
+/interop.test

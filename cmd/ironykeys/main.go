@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"golang.org/x/term"
 
@@ -31,14 +32,18 @@ const (
 )
 
 const usage = `Usage:
+  ironykeys create <vault> [--size 256M] [--pim N] [--dry-run] [--password-fd N]
   ironykeys verify <vault> [--pim N] [--password-fd N]
   ironykeys info   <vault>
   ironykeys version
 
+create  Write a new fixed-size vault. Never overwrites a file. The vault
+        holds no filesystem yet (formatting arrives with 'open').
 verify  Check the password against both headers. Never mounts.
 info    Show what is knowable without the password.
 
-Not implemented yet: create, open, close, status.
+Sizes take a K, M or G suffix (powers of 1024).
+Not implemented yet: open, close, status.
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -49,6 +54,8 @@ func run(args []string, out, errw io.Writer) int {
 		return exitUsage
 	}
 	switch args[0] {
+	case "create":
+		return cmdCreate(args[1:], out, errw)
 	case "verify":
 		return cmdVerify(args[1:], out, errw)
 	case "info":
@@ -59,7 +66,7 @@ func run(args []string, out, errw io.Writer) int {
 	case "help", "-h", "--help":
 		fmt.Fprint(out, usage)
 		return exitOK
-	case "create", "open", "close", "status":
+	case "open", "close", "status":
 		fmt.Fprintf(errw, "ironykeys: %q is not implemented yet\n", args[0])
 		return exitError
 	}
@@ -104,6 +111,86 @@ func cmdInfo(args []string, out, errw io.Writer) int {
 	return exitOK
 }
 
+// parseSize reads a size such as 256M, 1G, 4096K or a plain byte count.
+func parseSize(v string) (int64, error) {
+	if v == "" {
+		return 0, errors.New("empty size")
+	}
+	shift := 0
+	switch v[len(v)-1] {
+	case 'K', 'k':
+		shift = 10
+	case 'M', 'm':
+		shift = 20
+	case 'G', 'g':
+		shift = 30
+	}
+	if shift != 0 {
+		v = v[:len(v)-1]
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 || n > (1<<62)>>shift {
+		return 0, fmt.Errorf("invalid size")
+	}
+	return n << shift, nil
+}
+
+func cmdCreate(args []string, out, errw io.Writer) int {
+	fs := flag.NewFlagSet("create", flag.ContinueOnError)
+	fs.SetOutput(errw)
+	sizeArg := fs.String("size", "256M", "vault size")
+	pim := fs.Int("pim", 0, "PIM (0 = default)")
+	dry := fs.Bool("dry-run", false, "check and report, write nothing")
+	pwfd := fs.Int("password-fd", -1, "read the password from this file descriptor")
+	pos, err := parse(fs, args)
+	if err != nil || len(pos) != 1 {
+		fmt.Fprint(errw, usage)
+		return exitUsage
+	}
+	size, err := parseSize(*sizeArg)
+	if err != nil {
+		fmt.Fprintf(errw, "ironykeys: invalid --size %q\n", *sizeArg)
+		return exitUsage
+	}
+	iters, err := kdf.Iterations(*pim)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitUsage
+	}
+	l, err := volume.CheckCreate(pos[0], size)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	if *dry {
+		fmt.Fprintf(out, "Dry run, nothing written.\n")
+		fmt.Fprintf(out, "Would create: %s\n", pos[0])
+		fmt.Fprintf(out, "Size:         %d bytes (%.1f MiB), usable data area %d bytes\n", l.Size, float64(l.Size)/(1<<20), l.DataSize)
+		fmt.Fprintf(out, "Encryption:   AES-256-XTS, PBKDF2-SHA512 with %d iterations\n", iters)
+		return exitOK
+	}
+	pw, err := readPassword(*pwfd, true)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	defer clear(pw)
+	if err := volume.Create(pos[0], size, pw, *pim); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	// Read the new vault back before reporting success.
+	r, err := volume.Verify(pos[0], pw, *pim)
+	if err != nil || r.Primary.Err != nil || r.Backup.Err != nil {
+		fmt.Fprintln(errw, "ironykeys: the vault was written but did not verify; do not use it:", pos[0])
+		return exitError
+	}
+	r.Wipe()
+	fmt.Fprintf(out, "Created %s: %d bytes, usable data area %d bytes. Both headers verified.\n", pos[0], l.Size, l.DataSize)
+	fmt.Fprintln(out, "The vault has no filesystem yet.")
+	return exitOK
+}
+
 func cmdVerify(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(errw)
@@ -123,7 +210,7 @@ func cmdVerify(args []string, out, errw io.Writer) int {
 		fmt.Fprintln(errw, "ironykeys:", err)
 		return exitError
 	}
-	pw, err := readPassword(*pwfd)
+	pw, err := readPassword(*pwfd, false)
 	if err != nil {
 		fmt.Fprintln(errw, "ironykeys:", err)
 		return exitError
@@ -166,9 +253,9 @@ func describe(err error) string {
 }
 
 // readPassword reads the password from fd, or prompts on the terminal with
-// echo off when fd is negative. It is never taken from the command line or
+// echo off when fd is negative, twice if confirm is set. It is never taken from the command line or
 // the environment.
-func readPassword(fd int) ([]byte, error) {
+func readPassword(fd int, confirm bool) ([]byte, error) {
 	var pw []byte
 	if fd >= 0 {
 		f := os.NewFile(uintptr(fd), "password-fd")
@@ -191,6 +278,17 @@ func readPassword(fd int) ([]byte, error) {
 		fmt.Fprintln(tty)
 		if err != nil {
 			return nil, err
+		}
+		if confirm {
+			fmt.Fprint(tty, "Repeat password: ")
+			again, err := term.ReadPassword(int(tty.Fd()))
+			fmt.Fprintln(tty)
+			same := err == nil && bytes.Equal(pw, again)
+			clear(again)
+			if !same {
+				clear(pw)
+				return nil, errors.New("passwords do not match")
+			}
 		}
 	}
 	if len(pw) == 0 || len(pw) > kdf.MaxPasswordLen {
