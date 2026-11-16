@@ -135,14 +135,18 @@ independently with tweak 256) is:
 
 ```
 ironykeys create  <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
-    (until M3, create always behaves as --fs none)
-ironykeys open    <vault> [<mountpoint>] [--read-only] [--pim N]
+ironykeys open    <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
 ironykeys close   <vault|name>
-ironykeys status  [<vault>] [--quiet]
+ironykeys status  [<vault|name>] [--quiet]
 ironykeys verify  <vault> [--pim N]
 ironykeys info    <vault>
 ironykeys version
 ```
+
+A vault's name defaults to its file name without the extension
+(`IronyKeys.vc` → `IronyKeys`); `--name` overrides it. The name is used for
+the mapping (`/dev/mapper/ironykeys-<name>`), the default mountpoint and
+`close`.
 
 | Command | What it does | Needs root |
 |---|---|---|
@@ -160,6 +164,11 @@ damaged primary header from the backup).
 ### 4.1 Password handling
 - Prompted on the terminal with echo off. `create` asks twice.
 - `--password-fd N` reads it from a file descriptor, for automation.
+- Under `sudo` only descriptor 0 survives (sudo closes the rest), so the
+  form there is `sudo ironykeys open <vault> --password-fd 0 <<<"$PW"`.
+  IronyKeys refuses a descriptor the caller did not pass. Without this
+  check the number is reused by a file the Go runtime opens for itself, and
+  a vault would be created with a password nobody chose (found in M3).
 - There is no `--password` flag and no environment variable, so the password
   cannot leak through `ps`, shell history or `/proc/*/environ`.
 
@@ -173,14 +182,25 @@ damaged primary header from the backup).
 | 3 | Wrong password or not a VeraCrypt volume |
 | 4 | Vault is open / busy (`status --quiet`: vault is open) |
 | 5 | Volume is valid VeraCrypt but outside the supported profile |
-| 6 | One of the two headers is damaged; the other is good (vault still opens) |
+| 6 | `verify` only: one of the two headers is damaged; the other is good |
+
+`open` on a vault with one damaged header succeeds with exit 0 and prints a
+warning. `status <vault>` without `--quiet` also exits 4 when the vault is
+open.
 
 ### 4.3 Mount defaults
 - Mountpoint: `/home/<user>/IronyKeys/<name>` unless given.
 - Options: `nodev,nosuid,noexec`; for exFAT also `uid`, `gid` of the invoking
   user and `umask=077`.
+- An existing mountpoint must be an empty directory with nothing mounted on
+  it. A mountpoint that `open` created is removed again by `close`.
 - Runtime state in `/run/ironykeys/<name>.json` (loop device, mapping,
-  mountpoint). The vault file is held with an exclusive `flock` while open.
+  mountpoint; no secrets). It disappears on reboot, like the mapping.
+- "Open" is detected from the kernel: a vault is open if any loop device is
+  backed by the file. This also catches a vault opened by VeraCrypt or
+  cryptsetup, and needs no root, so `status` and backup scripts can use it.
+- ext4 vaults are created with the root directory owned by the invoking
+  user, mode 700.
 
 ## 5. Architecture
 
@@ -191,8 +211,8 @@ cmd/ironykeys/        command-line entry point
 internal/header/      parse, build, encrypt, decrypt the 512-byte header
 internal/kdf/         PBKDF2-SHA512 with PIM handling
 internal/volume/      file layout, create, verify, backup-header fallback
-internal/dm/          loop device + dm-crypt mapping
-internal/mount/       mkfs, mount, unmount, state file
+internal/session/     loop device, dm-crypt mapping, mkfs, mount, state file
+internal/interop/     root-only tests against VeraCrypt and cryptsetup
 ```
 
 Dependencies: `golang.org/x/crypto` (xts), `golang.org/x/term`,
@@ -272,7 +292,7 @@ sudo ./interop.test -test.v
 | M0 | Reference vault + field check | DONE 2026-11-16. All fields confirmed; one correction (key area padding is zero) |
 | M1 | `verify`, `info` | DONE 2026-11-16. Reads the VeraCrypt-made fixture; unit tests pass |
 | M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
-| M3 | `open`, `close`, `status`, formatting | Full interop matrix passes on piapps2 |
+| M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on piapps2 |
 | M4 | Release | arm64 + amd64 binaries, README with threat model |
 | M5 | Fleet use | Real vault created, backup job extended, restore test passed |
 
@@ -280,7 +300,6 @@ sudo ./interop.test -test.v
 
 1. Repository: name, GitHub identity, public or private.
 2. Licence (MIT or Apache-2.0 suggested; no VeraCrypt code is used).
-3. Default inner filesystem: exFAT (opens on Windows and macOS) or ext4
-   (keeps Unix permissions, Linux only).
-4. Go toolchain: not installed on piapps2 yet. Build on piapps2, on
-   linuxsvr, or only in CI.
+3. Decided 2026-11-16: exFAT is the default inner filesystem, for Windows
+   and macOS compatibility; ext4 stays available with `--fs ext4`.
+4. Decided 2026-11-16: Go 1.26 from Ubuntu's packages on piapps2.
