@@ -172,7 +172,7 @@ damaged primary header from the backup).
 | 3 | Wrong password or not a VeraCrypt volume |
 | 4 | Vault is open / busy (`status --quiet`: vault is open) |
 | 5 | Volume is valid VeraCrypt but outside the supported profile |
-| 6 | Primary header damaged, backup header used |
+| 6 | One of the two headers is damaged; the other is good (vault still opens) |
 
 ### 4.3 Mount defaults
 - Mountpoint: `/home/<user>/IronyKeys/<name>` unless given.
@@ -194,8 +194,8 @@ internal/dm/          loop device + dm-crypt mapping
 internal/mount/       mkfs, mount, unmount, state file
 ```
 
-Dependencies: `golang.org/x/crypto` (pbkdf2, xts), `golang.org/x/term`,
-`golang.org/x/sys`. Nothing else.
+Dependencies: `golang.org/x/crypto` (xts), `golang.org/x/term`,
+`golang.org/x/sys`. PBKDF2 comes from Go's standard library. Nothing else.
 
 Kernel interface, v0.1: call `losetup` and `dmsetup`, passing the table (with
 the key) on stdin so the key never appears in a process list. A later version
@@ -262,7 +262,7 @@ Each row runs for exFAT and ext4, with and without a PIM.
 | # | Deliverable | Done when |
 |---|---|---|
 | M0 | Reference vault + field check | DONE 2026-11-16. All fields confirmed; one correction (key area padding is zero) |
-| M1 | `verify`, `info` | Reads VeraCrypt-made vaults; unit tests pass |
+| M1 | `verify`, `info` | DONE 2026-11-16. Reads the VeraCrypt-made fixture; unit tests pass |
 | M2 | `create --fs none` | VeraCrypt and cryptsetup accept the result |
 | M3 | `open`, `close`, `status`, formatting | Full interop matrix passes on piapps2 |
 | M4 | Release | arm64 + amd64 binaries, README with threat model |
