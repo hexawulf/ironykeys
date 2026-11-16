@@ -1,0 +1,7 @@
+# build output
+/ironykeys
+/dist/
+# never commit real vaults; only the published test fixtures in testdata/
+*.vc
+!testdata/*.vc
+*.bak
