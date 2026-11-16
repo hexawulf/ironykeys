@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"ironykeys/internal/session"
-	"ironykeys/internal/volume"
+	"github.com/hexawulf/ironykeys/internal/session"
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 const fsSize = 16 << 20

@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
-	"ironykeys/internal/header"
-	"ironykeys/internal/kdf"
+	"github.com/hexawulf/ironykeys/internal/header"
+	"github.com/hexawulf/ironykeys/internal/kdf"
 )
 
 const (

@@ -15,10 +15,10 @@ import (
 
 	"golang.org/x/term"
 
-	"ironykeys/internal/header"
-	"ironykeys/internal/kdf"
-	"ironykeys/internal/session"
-	"ironykeys/internal/volume"
+	"github.com/hexawulf/ironykeys/internal/header"
+	"github.com/hexawulf/ironykeys/internal/kdf"
+	"github.com/hexawulf/ironykeys/internal/session"
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 var version = "0.1.0-dev"

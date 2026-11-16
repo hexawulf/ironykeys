@@ -1,6 +1,6 @@
-module ironykeys
+module github.com/hexawulf/ironykeys
 
-go 1.26.8
+go 1.26.0
 
 require (
 	golang.org/x/crypto v0.59.0

@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 
-	"ironykeys/internal/kdf"
-	"ironykeys/internal/session"
-	"ironykeys/internal/volume"
+	"github.com/hexawulf/ironykeys/internal/kdf"
+	"github.com/hexawulf/ironykeys/internal/session"
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 func needRoot(what string, errw io.Writer) bool {

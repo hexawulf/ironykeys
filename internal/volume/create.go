@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"ironykeys/internal/header"
-	"ironykeys/internal/kdf"
+	"github.com/hexawulf/ironykeys/internal/header"
+	"github.com/hexawulf/ironykeys/internal/kdf"
 )
 
 // CheckCreate reports whether a vault of the given size can be created at

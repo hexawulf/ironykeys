@@ -235,7 +235,7 @@ Notes kept for a later revisit:
 - `open`, `close` and formatting use the host kernel, so a container would
   need `--privileged` and `-v /dev:/dev`. It would be packaging, not isolation.
 - Only `create --fs none`, `verify` and `info` could run unprivileged.
-- piapps5 has no Docker, so an image would not cover the whole fleet.
+- Not every target host runs Docker, so an image would not cover them all.
 
 ## 7. Testing
 
@@ -247,7 +247,7 @@ Notes kept for a later revisit:
 - Wrong password, flipped bit in each CRC region, bad magic, truncated file.
 - PIM iteration arithmetic.
 
-### 7.2 Interoperability matrix (root, loop + dm-crypt; script on piapps2)
+### 7.2 Interoperability matrix (root, loop + dm-crypt)
 
 | Created by | Opened by | Check |
 |---|---|---|
@@ -282,7 +282,7 @@ sudo ./interop.test -test.v
   the tamper detection that XTS does not provide.
 - A restore test means: download a snapshot to a second host, check the
   SHA-256, run `ironykeys verify`, open it, compare a file listing.
-- The existing Cryptomator vault and its weekly job stay in place until a
+- Any existing key store and its backups stay in place until a
   restore test of IronyKeys has passed on a second machine.
 
 ## 9. Milestones
@@ -292,14 +292,14 @@ sudo ./interop.test -test.v
 | M0 | Reference vault + field check | DONE 2026-11-16. All fields confirmed; one correction (key area padding is zero) |
 | M1 | `verify`, `info` | DONE 2026-11-16. Reads the VeraCrypt-made fixture; unit tests pass |
 | M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
-| M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on piapps2 |
-| M4 | Release | arm64 + amd64 binaries, README with threat model |
-| M5 | Fleet use | Real vault created, backup job extended, restore test passed |
+| M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on a Raspberry Pi (arm64, Ubuntu 26.04) |
+| M4 | Release | README, Makefile and arm64 + amd64 builds done 2026-11-16. Not tagged yet; the amd64 build is untested beyond compiling |
+| M5 | Real use | Real vault created and first off-host backup verified 2026-11-16. Open: scheduled backup, restore test on a second machine |
 
 ## 10. Open decisions
 
-1. Repository: name, GitHub identity, public or private.
-2. Licence (MIT or Apache-2.0 suggested; no VeraCrypt code is used).
+1. Repository: `github.com/hexawulf/ironykeys`. Public or private is still open.
+2. Licence: MIT (no VeraCrypt code is used).
 3. Decided 2026-11-16: exFAT is the default inner filesystem, for Windows
    and macOS compatibility; ext4 stays available with `--fs ext4`.
-4. Decided 2026-11-16: Go 1.26 from Ubuntu's packages on piapps2.
+4. Decided 2026-11-16: Go 1.26 from Ubuntu's packages.

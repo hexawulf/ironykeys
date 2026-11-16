@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/xts"
 
-	"ironykeys/internal/header"
+	"github.com/hexawulf/ironykeys/internal/header"
 )
 
 // The fixture was created by VeraCrypt 1.26.31; see SPEC.md section 3.2.

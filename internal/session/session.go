@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"ironykeys/internal/header"
-	"ironykeys/internal/volume"
+	"github.com/hexawulf/ironykeys/internal/header"
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 // StateDir holds one JSON file per open vault. /run is cleared on reboot,

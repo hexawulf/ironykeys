@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/crypto/xts"
 
-	"ironykeys/internal/volume"
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 const (
