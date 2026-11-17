@@ -3,7 +3,7 @@
 **A small, zero-bloat command-line tool for Linux that keeps secrets in one fixed-size encrypted file.**
 The vault uses the standard VeraCrypt volume format (`AES-256-XTS`, `PBKDF2-HMAC-SHA512`), so the official VeraCrypt and `cryptsetup` can open it without IronyKeys.
 
-> *The name is for the irony of keeping SSH and PGP keys in a vault that is backed up to the cloud.*
+> *Named for the irony of keeping your most private files — SSH keys, PGP keys, and recovery codes — on someone else's cloud.*
 
 ```text
 $ sudo ironykeys create ~/vaults/keys.vc

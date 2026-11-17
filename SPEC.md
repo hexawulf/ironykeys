@@ -7,8 +7,8 @@
 IronyKeys is a small command-line tool for Raspberry Pi and other Linux hosts
 that creates and opens a single fixed-size encrypted vault file. The vault uses
 the VeraCrypt volume format, so the official VeraCrypt and `cryptsetup` can
-open it too. The name is for the irony of keeping PGP and SSH keys in a vault
-that is backed up to the cloud.
+open it too. Named for the irony of keeping your most private files — SSH
+keys, PGP keys, and recovery codes — on someone else's cloud.
 
 ## 1. Goals and non-goals
 
