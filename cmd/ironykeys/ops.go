@@ -76,7 +76,7 @@ func cmdOpen(args []string, out, errw io.Writer) int {
 		return noHeader(r, errw)
 	}
 	if r.Primary.Err != nil {
-		fmt.Fprintln(errw, "ironykeys: warning: the primary header is damaged; opening with the backup header. Copy your data out and recreate the vault.")
+		fmt.Fprintln(errw, "ironykeys: warning: the primary header is damaged; opening with the backup header. Run 'ironykeys header-restore' after closing to repair it.")
 	}
 
 	st, err := session.Open(session.OpenOptions{

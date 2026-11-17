@@ -72,14 +72,14 @@ Hidden volumes, keyfiles, cipher cascades, other ciphers or hashes, system encry
 
 ## 📌 Status
 
-Version `0.1.0`. All commands below are implemented and tested on `arm64` (Raspberry Pi 5, Ubuntu 26.04) and `amd64` against VeraCrypt 1.26.31 and `cryptsetup` 2.8.4. The full design and byte layout are in [SPEC.md](SPEC.md).
+Version `0.2.0`. All commands below are implemented and tested on `arm64` (Raspberry Pi 5, Ubuntu 26.04) and `amd64` against VeraCrypt 1.26.31 and `cryptsetup` 2.8.4. The full design and byte layout are in [SPEC.md](SPEC.md).
 
 ---
 
 ## ⚙️ Requirements
 
 - Linux with `dm-crypt` and loop devices (any mainstream distribution kernel).
-- Root, through `sudo`, for `open`, `close` and for formatting in `create`. `verify`, `info`, `status` and `create --fs none` need no root.
+- Root, through `sudo`, for `open`, `close` and for formatting in `create`. `verify`, `passwd`, `header-restore`, `info`, `status` and `create --fs none` need no root.
 - Standard system tools on the `PATH`: `losetup`, `dmsetup`, `blkid`, `mount`, `umount`, plus `mkfs.exfat` (package `exfatprogs`) or `mkfs.ext4` (package `e2fsprogs`) for the filesystem you choose.
 - Kernel exFAT support for exFAT vaults (in mainline since Linux 5.7).
 - Go 1.26 or newer to build.
@@ -170,16 +170,18 @@ ironykeys verify ~/vaults/keys.vc   # test the password against both headers wit
 ## 📖 Command reference
 
 ```text
-ironykeys create <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
-ironykeys open   <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
-ironykeys close  <vault|name>
-ironykeys status [<vault|name>] [--quiet]
-ironykeys verify <vault> [--pim N]
-ironykeys info   <vault>
+ironykeys create         <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
+ironykeys open           <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
+ironykeys close          <vault|name>
+ironykeys status         [<vault|name>] [--quiet]
+ironykeys verify         <vault> [--pim N]
+ironykeys passwd         <vault> [--pim N] [--new-pim N] [--dry-run]
+ironykeys header-restore <vault> [--pim N] [--dry-run]
+ironykeys info           <vault>
 ironykeys version
 ```
 
-`create`, `open` and `verify` also take `--password-fd N` (see [🔑 Passwords, sudo and scripts](#-passwords-sudo-and-scripts)). Flags may come before or after the vault path.
+`create`, `open`, `verify`, `passwd` and `header-restore` also take `--password-fd N` (see [🔑 Passwords, sudo and scripts](#-passwords-sudo-and-scripts)). Flags may come before or after the vault path.
 
 ### `create`
 
@@ -222,7 +224,7 @@ Details:
 - Mount options are `nodev,nosuid,noexec`. For `exFAT`, files belong to the user who ran `sudo`, with `umask=077`.
 - An existing mountpoint must be an empty directory with nothing mounted on it. A mountpoint that `open` creates is removed again by `close`.
 - If any step fails, the steps already taken are undone. Nothing is left mapped or mounted.
-- `open` checks the primary header first for speed. If the primary header is damaged, the backup header at the end of the file is used automatically and a warning is printed. Copy your data out and recreate the vault when that happens.
+- `open` checks the primary header first for speed. If the primary header is damaged, the backup header at the end of the file is used automatically and a warning is printed. Run `ironykeys header-restore` after closing the vault to repair the damaged header in place.
 
 ### `close`
 
@@ -249,6 +251,27 @@ Primary header: OK
 Backup header:  OK
 Vault OK: 268173312-byte data area, AES-256-XTS, PBKDF2-SHA512.
 ```
+
+### `passwd`
+
+Changes the vault password (and optionally its PIM) in place. It decrypts a usable header with the current password to recover the master key, then re-encrypts both the backup and primary headers with fresh 64-byte random salts under the new password and verifies both. The data area is untouched, and no root is needed. Refuses to run while the vault is open.
+
+| Option | Meaning |
+|---|---|
+| `--pim` | The current PIM, if the vault uses one. |
+| `--new-pim` | New PIM (`0` for the default 500,000 iterations). If omitted, the current PIM is kept. |
+| `--dry-run` | Verify the current password and report what would be re-encrypted, writing nothing. |
+
+With `--password-fd N`, supply two lines (`old_password\nnew_password\n`).
+
+### `header-restore`
+
+Repairs a damaged primary or backup header in place from the intact one, using a fresh 64-byte random salt, and verifies both headers afterwards. Needs no root and refuses to run while the vault is open.
+
+| Option | Meaning |
+|---|---|
+| `--pim` | The vault's PIM, if any. |
+| `--dry-run` | Check both headers and report which one would be restored, writing nothing. |
 
 ### `info`
 
@@ -418,7 +441,7 @@ Find what holds it with `sudo lsof +f -- ~/IronyKeys/<name>` or `fuser -vm ~/Iro
 The vault was created with `--fs none`. Format it through VeraCrypt or `cryptsetup` plus `mkfs`, or create a new vault with a filesystem.
 
 **"one header is good and one is not"**
-The vault still opens. Copy the data out, create a new vault and move the data over. A command to repair a header in place is planned.
+The vault still opens. Close it if open and run `ironykeys header-restore ~/vaults/keys.vc` to repair the damaged header from the intact one.
 
 **After a reboot or power cut**
 Mappings and state files do not survive a reboot; the vault is simply closed. Run `ironykeys verify` and open it again. If the power went while you were writing, the filesystem inside may need a check, as with any disk.

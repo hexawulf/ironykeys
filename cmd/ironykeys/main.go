@@ -22,7 +22,7 @@ import (
 	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 // Exit codes, SPEC.md section 4.2.
 const (
@@ -36,26 +36,31 @@ const (
 )
 
 const usage = `Usage:
-  ironykeys create <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
-  ironykeys open   <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
-  ironykeys close  <vault|name>
-  ironykeys status [<vault|name>] [--quiet]
-  ironykeys verify <vault> [--pim N]
-  ironykeys info   <vault>
+  ironykeys create         <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
+  ironykeys open           <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
+  ironykeys close          <vault|name>
+  ironykeys status         [<vault|name>] [--quiet]
+  ironykeys verify         <vault> [--pim N]
+  ironykeys passwd         <vault> [--pim N] [--new-pim N] [--dry-run]
+  ironykeys header-restore <vault> [--pim N] [--dry-run]
+  ironykeys info           <vault>
   ironykeys version
 
-create  Write a new fixed-size vault and format it. Never overwrites a file.
-open    Unlock a vault and mount it (default: ~/IronyKeys/<name>).
-close   Unmount and lock an open vault.
-status  List open vaults, or say whether one is open.
-        With --quiet: no output, exit 4 if open, 0 if closed.
-verify  Check the password against both headers. Never mounts.
-info    Show what is knowable without the password.
+create          Write a new fixed-size vault and format it. Never overwrites a file.
+open            Unlock a vault and mount it (default: ~/IronyKeys/<name>).
+close           Unmount and lock an open vault.
+status          List open vaults, or say whether one is open.
+                With --quiet: no output, exit 4 if open, 0 if closed.
+verify          Check the password against both headers. Never mounts.
+passwd          Change the vault password (or PIM) by re-encrypting both headers.
+header-restore  Repair a damaged primary or backup header from the good one.
+info            Show what is knowable without the password.
 
-create, open and verify ask for the password on the terminal, or read it
-with --password-fd N. Under sudo only descriptor 0 survives, so use
---password-fd 0 there. Sizes take a K, M or G suffix (powers of 1024).
-open, close and formatting need root: run them with sudo.
+create, open, verify, passwd and header-restore ask for the password on the
+terminal, or read it with --password-fd N (passwd reads old\nnew\n). Under
+sudo only descriptor 0 survives, so use --password-fd 0 there. Sizes take a
+K, M or G suffix (powers of 1024). open, close and formatting need root:
+run them with sudo.
 `
 
 func main() {
@@ -73,6 +78,10 @@ func run(args []string, out, errw io.Writer) int {
 		return cmdCreate(args[1:], out, errw)
 	case "verify":
 		return cmdVerify(args[1:], out, errw)
+	case "passwd":
+		return cmdPasswd(args[1:], out, errw)
+	case "header-restore":
+		return cmdHeaderRestore(args[1:], out, errw)
 	case "info":
 		return cmdInfo(args[1:], out, errw)
 	case "version", "--version":
@@ -287,10 +296,167 @@ func cmdVerify(args []string, out, errw io.Writer) int {
 		fmt.Fprintf(out, "Vault OK: %d-byte data area, AES-256-XTS, PBKDF2-SHA512.\n", r.Layout.DataSize)
 		return exitOK
 	case pe == nil || be == nil:
-		fmt.Fprintln(errw, "ironykeys: one header is good and one is not; the vault can be opened but should be repaired.")
+		fmt.Fprintln(errw, "ironykeys: one header is good and one is not; run 'ironykeys header-restore' to repair it.")
 		return exitOneHeaderOK
 	}
 	return noHeader(r, errw)
+}
+
+func cmdPasswd(args []string, out, errw io.Writer) int {
+	fs := flag.NewFlagSet("passwd", flag.ContinueOnError)
+	fs.SetOutput(errw)
+	pim := fs.Int("pim", 0, "current PIM (0 = default)")
+	newPIM := fs.Int("new-pim", -1, "new PIM (-1 = keep current PIM)")
+	dry := fs.Bool("dry-run", false, "verify current password and report, write nothing")
+	pwfd := fs.Int("password-fd", -1, "read old and new passwords (two lines) from this file descriptor")
+	pos, err := parse(fs, args)
+	if err != nil || len(pos) != 1 {
+		fmt.Fprint(errw, usage)
+		return exitUsage
+	}
+	if _, err := kdf.Iterations(*pim); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitUsage
+	}
+	targetPIM := *pim
+	if *newPIM >= 0 {
+		targetPIM = *newPIM
+	}
+	targetIters, err := kdf.Iterations(targetPIM)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitUsage
+	}
+	vault := pos[0]
+	if _, err := volume.Stat(vault); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	if loop, _ := session.LoopFor(vault); loop != "" {
+		fmt.Fprintf(errw, "ironykeys: %s is open (%s); close it before changing the password.\n", vault, loop)
+		return exitBusy
+	}
+
+	var oldPW, newPW []byte
+	if *pwfd >= 0 {
+		oldPW, newPW, err = readPasswordPair(*pwfd)
+		if err != nil {
+			fmt.Fprintln(errw, "ironykeys:", err)
+			return exitError
+		}
+		defer clear(oldPW)
+		defer clear(newPW)
+	} else {
+		oldPW, err = promptPassword("Current vault password: ", "", false)
+		if err != nil {
+			fmt.Fprintln(errw, "ironykeys:", err)
+			return exitError
+		}
+		defer clear(oldPW)
+	}
+
+	r, err := volume.Verify(vault, oldPW, *pim)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	defer r.Wipe()
+	h := r.Usable()
+	if h == nil {
+		return noHeader(r, errw)
+	}
+	if r.Primary.Err != nil {
+		fmt.Fprintln(errw, "ironykeys: warning: the primary header is damaged; using the backup header to recover the master key.")
+	} else if r.Backup.Err != nil {
+		fmt.Fprintln(errw, "ironykeys: warning: the backup header is damaged; both headers will be rewritten.")
+	}
+
+	if *pwfd < 0 {
+		newPW, err = promptPassword("New vault password: ", "Repeat new password: ", true)
+		if err != nil {
+			fmt.Fprintln(errw, "ironykeys:", err)
+			return exitError
+		}
+		defer clear(newPW)
+	}
+	if *dry {
+		fmt.Fprintf(out, "Dry run, nothing written.\nWould re-encrypt both headers of %s (PBKDF2-SHA512, %d iterations).\n", vault, targetIters)
+		return exitOK
+	}
+	if err := volume.RewriteHeaders(vault, h, newPW, targetPIM); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	fmt.Fprintf(out, "Password updated for %s. Both headers re-encrypted and verified.\n", vault)
+	return exitOK
+}
+
+func cmdHeaderRestore(args []string, out, errw io.Writer) int {
+	fs := flag.NewFlagSet("header-restore", flag.ContinueOnError)
+	fs.SetOutput(errw)
+	pim := fs.Int("pim", 0, "PIM (0 = default)")
+	dry := fs.Bool("dry-run", false, "check both headers and report, write nothing")
+	pwfd := fs.Int("password-fd", -1, "read the password from this file descriptor")
+	pos, err := parse(fs, args)
+	if err != nil || len(pos) != 1 {
+		fmt.Fprint(errw, usage)
+		return exitUsage
+	}
+	if _, err := kdf.Iterations(*pim); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitUsage
+	}
+	vault := pos[0]
+	if _, err := volume.Stat(vault); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	if loop, _ := session.LoopFor(vault); loop != "" {
+		fmt.Fprintf(errw, "ironykeys: %s is open (%s); close it before repairing headers.\n", vault, loop)
+		return exitBusy
+	}
+	pw, err := readPassword(*pwfd, false)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	defer clear(pw)
+
+	r, err := volume.Verify(vault, pw, *pim)
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	defer r.Wipe()
+
+	pe, be := r.Primary.Err, r.Backup.Err
+	if pe == nil && be == nil {
+		fmt.Fprintln(out, "Both headers are already OK; nothing to repair.")
+		return exitOK
+	}
+	if pe != nil && be != nil {
+		return noHeader(r, errw)
+	}
+	var targetOff int64
+	var which string
+	h := r.Usable()
+	if pe != nil {
+		targetOff = 0
+		which = "primary header from backup header"
+	} else {
+		targetOff = r.Layout.BackupOff
+		which = "backup header from primary header"
+	}
+	if *dry {
+		fmt.Fprintf(out, "Dry run, nothing written.\nWould restore %s of %s (offset %d).\n", which, vault, targetOff)
+		return exitOK
+	}
+	if err := volume.RepairHeader(vault, targetOff, h, pw, *pim); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	fmt.Fprintf(out, "Restored %s of %s. Both headers verified.\n", which, vault)
+	return exitOK
 }
 
 // noHeader reports why neither header is usable and returns the exit code.
@@ -346,7 +512,6 @@ func checkPasswordFD(fd int) error {
 // echo off when fd is negative, twice if confirm is set. It is never taken from the command line or
 // the environment.
 func readPassword(fd int, confirm bool) ([]byte, error) {
-	var pw []byte
 	if fd >= 0 {
 		if err := checkPasswordFD(fd); err != nil {
 			return nil, err
@@ -358,30 +523,37 @@ func readPassword(fd int, confirm bool) ([]byte, error) {
 			return nil, fmt.Errorf("reading password from fd %d: %w", fd, err)
 		}
 		trimmed := bytes.TrimRight(b, "\r\n")
-		pw = make([]byte, len(trimmed))
+		if len(trimmed) == 0 || len(trimmed) > kdf.MaxPasswordLen {
+			return nil, errors.New("password must be 1 to 128 bytes")
+		}
+		pw := make([]byte, len(trimmed))
 		copy(pw, trimmed)
-	} else {
-		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-		if err != nil {
-			return nil, errors.New("no terminal to ask for the password; use --password-fd")
-		}
-		defer tty.Close()
-		fmt.Fprint(tty, "Vault password: ")
-		pw, err = term.ReadPassword(int(tty.Fd()))
+		return pw, nil
+	}
+	return promptPassword("Vault password: ", "Repeat password: ", confirm)
+}
+
+func promptPassword(prompt1, prompt2 string, confirm bool) ([]byte, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, errors.New("no terminal to ask for the password; use --password-fd")
+	}
+	defer tty.Close()
+	fmt.Fprint(tty, prompt1)
+	pw, err := term.ReadPassword(int(tty.Fd()))
+	fmt.Fprintln(tty)
+	if err != nil {
+		return nil, err
+	}
+	if confirm {
+		fmt.Fprint(tty, prompt2)
+		again, err := term.ReadPassword(int(tty.Fd()))
 		fmt.Fprintln(tty)
-		if err != nil {
-			return nil, err
-		}
-		if confirm {
-			fmt.Fprint(tty, "Repeat password: ")
-			again, err := term.ReadPassword(int(tty.Fd()))
-			fmt.Fprintln(tty)
-			same := err == nil && bytes.Equal(pw, again)
-			clear(again)
-			if !same {
-				clear(pw)
-				return nil, errors.New("passwords do not match")
-			}
+		same := err == nil && bytes.Equal(pw, again)
+		clear(again)
+		if !same {
+			clear(pw)
+			return nil, errors.New("passwords do not match")
 		}
 	}
 	if len(pw) == 0 || len(pw) > kdf.MaxPasswordLen {
@@ -389,4 +561,34 @@ func readPassword(fd int, confirm bool) ([]byte, error) {
 		return nil, errors.New("password must be 1 to 128 bytes")
 	}
 	return pw, nil
+}
+
+// readPasswordPair reads old and new passwords separated by a newline from fd.
+func readPasswordPair(fd int) ([]byte, []byte, error) {
+	if err := checkPasswordFD(fd); err != nil {
+		return nil, nil, err
+	}
+	f := os.NewFile(uintptr(fd), "password-fd")
+	b, err := io.ReadAll(io.LimitReader(f, 2*kdf.MaxPasswordLen+6))
+	defer clear(b)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading passwords from fd %d: %w", fd, err)
+	}
+	nl := bytes.IndexByte(b, '\n')
+	if nl < 0 {
+		return nil, nil, errors.New("passwd with --password-fd requires two lines: old password then new password")
+	}
+	rawOld := bytes.TrimRight(b[:nl], "\r")
+	rawNew := bytes.TrimRight(b[nl+1:], "\r\n")
+	if bytes.IndexByte(rawNew, '\n') >= 0 {
+		return nil, nil, errors.New("unexpected extra line on --password-fd")
+	}
+	if len(rawOld) == 0 || len(rawOld) > kdf.MaxPasswordLen || len(rawNew) == 0 || len(rawNew) > kdf.MaxPasswordLen {
+		return nil, nil, errors.New("password must be 1 to 128 bytes")
+	}
+	oldPW := make([]byte, len(rawOld))
+	newPW := make([]byte, len(rawNew))
+	copy(oldPW, rawOld)
+	copy(newPW, rawNew)
+	return oldPW, newPW, nil
 }

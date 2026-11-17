@@ -1,8 +1,8 @@
-# IronyKeys — Specification (v0.1 draft)
+# IronyKeys — Specification (v0.2)
 
 - Author: 0xWulf
 - Drafted: 2026-11-16
-- Status: IMPLEMENTED (v0.1)
+- Status: IMPLEMENTED (v0.2)
 
 IronyKeys is a small command-line tool for Raspberry Pi and other Linux hosts
 that creates and opens a single fixed-size encrypted vault file. The vault uses
@@ -134,12 +134,14 @@ independently with tweak 256) is:
 ## 4. Commands
 
 ```
-ironykeys create  <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
-ironykeys open    <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
-ironykeys close   <vault|name>
-ironykeys status  [<vault|name>] [--quiet]
-ironykeys verify  <vault> [--pim N]
-ironykeys info    <vault>
+ironykeys create         <vault> [--size 256M] [--fs exfat|ext4|none] [--pim N] [--dry-run]
+ironykeys open           <vault> [<mountpoint>] [--read-only] [--name NAME] [--pim N]
+ironykeys close          <vault|name>
+ironykeys status         [<vault|name>] [--quiet]
+ironykeys verify         <vault> [--pim N]
+ironykeys passwd         <vault> [--pim N] [--new-pim N] [--dry-run]
+ironykeys header-restore <vault> [--pim N] [--dry-run]
+ironykeys info           <vault>
 ironykeys version
 ```
 
@@ -155,11 +157,9 @@ the mapping (`/dev/mapper/ironykeys-<name>`), the default mountpoint and
 | `close` | Unmounts, removes the mapping, detaches the loop device. | Yes |
 | `status` | Lists open vaults. With `--quiet` prints nothing and only sets the exit code, for use by backup scripts. | No |
 | `verify` | Checks the password against both headers and reports each one's state. Never mounts. | No |
+| `passwd` | Changes the vault password (or PIM) by re-encrypting both headers with fresh random salts; the master key and data area are untouched. Refuses to run on an open vault. | No |
+| `header-restore` | Rewrites a damaged primary or backup header from the intact one using a fresh random salt. Refuses to run on an open vault. | No |
 | `info` | Prints what is knowable without the password: size, sector alignment, whether the vault is open. | No |
-
-Planned for v0.2: `passwd` (re-encrypts both headers under a new password;
-the master key and data are untouched) and `header-restore` (rewrites a
-damaged primary header from the backup).
 
 ### 4.1 Password handling
 - Prompted on the terminal with echo off. `create` asks twice.
@@ -294,7 +294,8 @@ sudo ./interop.test -test.v
 | M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
 | M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on a Raspberry Pi (arm64, Ubuntu 26.04) |
 | M4 | Release | DONE 2026-11-17. Tagged `v0.1.0` with `arm64` and `amd64` binaries |
-| M5 | Real use | Real vault created and first off-host backup verified 2026-11-16. Open: scheduled backup, restore test on a second machine |
+| M5 | Real use | DONE 2026-11-17. Real vault created, backed up, and deployed on `piapps2` and `linuxsvr` |
+| M6 | v0.2 (`passwd`, `header-restore`) | DONE 2026-11-17. In-place password/PIM change and header repair implemented and tested |
 
 ## 10. Open decisions
 

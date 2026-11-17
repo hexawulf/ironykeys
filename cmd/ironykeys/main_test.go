@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
 func TestCheckPasswordFD(t *testing.T) {
@@ -59,5 +65,87 @@ func TestParseSize(t *testing.T) {
 		if _, err := parseSize(in); err == nil {
 			t.Errorf("parseSize(%q) accepted", in)
 		}
+	}
+}
+
+func runWithFD(t *testing.T, input string, args ...string) (int, string, string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := w.WriteString(input); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	var out, errb bytes.Buffer
+	fullArgs := append(args, "--password-fd", fmt.Sprint(r.Fd()))
+	rc := run(fullArgs, &out, &errb)
+	return rc, out.String(), errb.String()
+}
+
+func TestPasswdAndHeaderRestoreCLI(t *testing.T) {
+	vault := filepath.Join(t.TempDir(), "cli.vc")
+	if rc, _, errStr := runWithFD(t, "pass1\n", "create", vault, "--size", "4M", "--fs", "none", "--pim", "1"); rc != exitOK {
+		t.Fatalf("create rc=%d err=%s", rc, errStr)
+	}
+
+	// Wrong old password in passwd must fail with exitNoMatch (3).
+	if rc, _, _ := runWithFD(t, "wrong\npass2\n", "passwd", vault, "--pim", "1"); rc != exitNoMatch {
+		t.Errorf("passwd wrong old password rc=%d, want %d", rc, exitNoMatch)
+	}
+
+	// Dry-run passwd changes nothing.
+	if rc, out, errStr := runWithFD(t, "pass1\npass2\n", "passwd", vault, "--pim", "1", "--new-pim", "2", "--dry-run"); rc != exitOK || !strings.Contains(out, "Dry run") {
+		t.Fatalf("passwd dry-run rc=%d out=%q err=%q", rc, out, errStr)
+	}
+	if rc, _, _ := runWithFD(t, "pass1\n", "verify", vault, "--pim", "1"); rc != exitOK {
+		t.Errorf("verify with pass1 after dry-run rc=%d, want 0", rc)
+	}
+
+	// Real passwd changes password and PIM.
+	if rc, _, errStr := runWithFD(t, "pass1\npass2\n", "passwd", vault, "--pim", "1", "--new-pim", "2"); rc != exitOK {
+		t.Fatalf("passwd rc=%d err=%s", rc, errStr)
+	}
+	if rc, _, _ := runWithFD(t, "pass1\n", "verify", vault, "--pim", "1"); rc != exitNoMatch {
+		t.Errorf("old password still accepted: rc=%d", rc)
+	}
+	if rc, _, errStr := runWithFD(t, "pass2\n", "verify", vault, "--pim", "2"); rc != exitOK {
+		t.Fatalf("new password rejected: rc=%d err=%s", rc, errStr)
+	}
+
+	// header-restore when both headers are OK is a no-op (exit 0).
+	if rc, out, _ := runWithFD(t, "pass2\n", "header-restore", vault, "--pim", "2"); rc != exitOK || !strings.Contains(out, "already OK") {
+		t.Errorf("header-restore on healthy vault: rc=%d out=%q", rc, out)
+	}
+
+	// Damage primary header -> verify exits 6 -> header-restore repairs it -> verify exits 0.
+	f, err := os.OpenFile(vault, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteAt(make([]byte, 512), 0)
+	f.Close()
+
+	if rc, _, _ := runWithFD(t, "pass2\n", "verify", vault, "--pim", "2"); rc != exitOneHeaderOK {
+		t.Fatalf("verify with damaged primary: rc=%d, want %d", rc, exitOneHeaderOK)
+	}
+	if rc, _, errStr := runWithFD(t, "pass2\n", "header-restore", vault, "--pim", "2"); rc != exitOK {
+		t.Fatalf("header-restore primary: rc=%d err=%s", rc, errStr)
+	}
+	if rc, _, _ := runWithFD(t, "pass2\n", "verify", vault, "--pim", "2"); rc != exitOK {
+		t.Fatalf("verify after primary restore: rc=%d, want 0", rc)
+	}
+
+	// Damage backup header -> header-restore repairs it -> verify exits 0.
+	f, _ = os.OpenFile(vault, os.O_WRONLY, 0)
+	f.WriteAt(make([]byte, 512), 4<<20-volume.DataOffset)
+	f.Close()
+	if rc, _, errStr := runWithFD(t, "pass2\n", "header-restore", vault, "--pim", "2"); rc != exitOK {
+		t.Fatalf("header-restore backup: rc=%d err=%s", rc, errStr)
+	}
+	if rc, _, _ := runWithFD(t, "pass2\n", "verify", vault, "--pim", "2"); rc != exitOK {
+		t.Fatalf("verify after backup restore: rc=%d, want 0", rc)
 	}
 }

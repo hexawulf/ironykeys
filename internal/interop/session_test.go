@@ -271,6 +271,40 @@ func TestOpenCloseFailures(t *testing.T) {
 		}
 		expectOpen(t, vault, false)
 	})
+
+	t.Run("passwd and header-restore preserve data across VeraCrypt and cryptsetup", func(t *testing.T) {
+		vault := newVault(t, "exfat", pim)
+		mp := filepath.Join(t.TempDir(), "mnt")
+		mustOpen(t, vault, pim, mp)
+		put(t, filepath.Join(mp, "secret"), "survives-passwd-and-repair")
+		mustClose(t)
+
+		// 1. Corrupt primary header, then repair via RepairHeader.
+		f, _ := os.OpenFile(vault, os.O_WRONLY, 0)
+		f.WriteAt(make([]byte, 512), 0)
+		f.Close()
+		rDamaged, _ := volume.Verify(vault, []byte(pass), pim)
+		if err := volume.RepairHeader(vault, 0, rDamaged.Usable(), []byte(pass), pim); err != nil {
+			t.Fatalf("RepairHeader: %v", err)
+		}
+		rDamaged.Wipe()
+
+		// 2. Change password and PIM via RewriteHeaders; VeraCrypt must open under the new password/PIM.
+		const newPass = "new-interop-password"
+		const newPIM = 9
+		rOK, _ := volume.Verify(vault, []byte(pass), pim)
+		if err := volume.RewriteHeaders(vault, rOK.Usable(), []byte(newPass), newPIM); err != nil {
+			t.Fatalf("RewriteHeaders: %v", err)
+		}
+		rOK.Wipe()
+
+		vdir := t.TempDir()
+		run(t, "", "veracrypt", "--text", "--non-interactive",
+			"--password="+newPass, fmt.Sprintf("--pim=%d", newPIM), "--keyfiles=",
+			"--protect-hidden=no", "--slot="+vcSlot, vault, vdir)
+		expect(t, filepath.Join(vdir, "secret"), "survives-passwd-and-repair")
+		vcClose(t, vault)
+	})
 }
 
 func expectOpen(t *testing.T, vault string, want bool) {

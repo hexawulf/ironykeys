@@ -119,3 +119,72 @@ func writeHeader(f io.WriterAt, off int64, h *header.Header, password []byte, pi
 	_, err = f.WriteAt(raw, off)
 	return err
 }
+
+// RewriteHeaders encrypts h under password and pim with a fresh random salt
+// for each header, writes both headers to path (backup first, primary last),
+// syncs the file and verifies that both headers decrypt back to h. The data
+// area is untouched.
+func RewriteHeaders(path string, h *header.Header, password []byte, pim int) error {
+	return updateHeaders(path, h, password, pim, nil)
+}
+
+// RepairHeader rewrites the header at off (0 or l.BackupOff) from the good
+// header h with a fresh random salt, syncs the file and verifies that both
+// headers now decrypt back to h.
+func RepairHeader(path string, off int64, h *header.Header, password []byte, pim int) error {
+	return updateHeaders(path, h, password, pim, []int64{off})
+}
+
+func updateHeaders(path string, h *header.Header, password []byte, pim int, offsets []int64) error {
+	if _, err := kdf.HeaderKey(password, make([]byte, kdf.SaltSize), 1); err != nil {
+		return err
+	}
+	if _, err := kdf.Iterations(pim); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", path)
+	}
+	l, err := CheckLayout(fi.Size())
+	if err != nil {
+		return err
+	}
+	if err := CheckProfile(h, l); err != nil {
+		return err
+	}
+	if offsets == nil {
+		offsets = []int64{l.BackupOff, 0}
+	}
+	for _, off := range offsets {
+		if off != 0 && off != l.BackupOff {
+			return fmt.Errorf("invalid header offset %d", off)
+		}
+		if err := writeHeader(f, off, h, password, pim); err != nil {
+			return err
+		}
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	r, err := Verify(path, password, pim)
+	if err != nil {
+		return err
+	}
+	defer r.Wipe()
+	if r.Primary.Err != nil || r.Backup.Err != nil || *r.Primary.Header != *h {
+		return errors.New("the updated headers did not verify")
+	}
+	return nil
+}
