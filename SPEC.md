@@ -294,7 +294,7 @@ sudo ./interop.test -test.v
 | M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
 | M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on a Raspberry Pi (arm64, Ubuntu 26.04) |
 | M4 | Release | DONE 2026-11-17. Tagged `v0.1.0` with `arm64` and `amd64` binaries |
-| M5 | Real use | DONE 2026-11-17. Real vault created, backed up, and deployed on `piapps2` and `linuxsvr` |
+| M5 | Real use | DONE 2026-11-17. Real vault created, backed up, and deployed on `arm64` and `amd64` hosts |
 | M6 | v0.2 (`passwd`, `header-restore`) | DONE 2026-11-17. In-place password/PIM change and header repair implemented and tested |
 
 ## 10. Open decisions
