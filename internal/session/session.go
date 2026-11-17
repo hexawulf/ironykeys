@@ -202,10 +202,16 @@ func List() ([]State, error) {
 	for _, f := range files {
 		b, err := os.ReadFile(f)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return nil, err
 		}
 		var s State
 		if err := json.Unmarshal(b, &s); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		if err := CheckName(s.Name); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
 		}
 		out = append(out, s)
@@ -417,6 +423,9 @@ func prepareMountpoint(mp string, own Owner, undo *[]func()) (created bool, err 
 		if !fi.IsDir() {
 			return false, fmt.Errorf("mountpoint %s is not a directory", mp)
 		}
+		if mp, err = filepath.EvalSymlinks(mp); err != nil {
+			return false, err
+		}
 		if mounted(mp) {
 			return false, fmt.Errorf("something is already mounted at %s: %w", mp, ErrBusy)
 		}
@@ -434,7 +443,11 @@ func prepareMountpoint(mp string, own Owner, undo *[]func()) (created bool, err 
 	// Create missing directories top down, each owned by the user.
 	var missing []string
 	for d := mp; ; d = filepath.Dir(d) {
-		if _, err := os.Lstat(d); err == nil {
+		fi, err := os.Lstat(d)
+		if err == nil {
+			if !fi.IsDir() {
+				return false, fmt.Errorf("mountpoint ancestor %s is not a directory", d)
+			}
 			break
 		}
 		missing = append([]string{d}, missing...)

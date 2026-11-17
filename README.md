@@ -443,10 +443,11 @@ copy of anything.
 
 - The mapping key sits in kernel memory while a vault is open, as with any
   dm-crypt device. `close` removes it; so does a reboot.
-- IronyKeys clears key buffers after use and passes the key to `dmsetup` on
-  standard input, never as an argument. Go's garbage collector can still
-  leave copies in process memory until the process exits, which is a moment
-  later. This is best effort, not a guarantee.
+- IronyKeys locks its memory (`mlockall`) where permitted, clears key buffers
+  after use and passes the key to `dmsetup` on standard input, never as an
+  argument. Go's garbage collector can still leave copies in process memory
+  until the process exits, which is a moment later. This is best effort, not
+  a guarantee.
 - The vault file is created with mode 600. The state files under
   `/run/ironykeys/` hold paths and device names, no secrets.
 - A Raspberry Pi 4 has no hardware AES; a Pi 5 does. For a key vault of a

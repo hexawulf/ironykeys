@@ -65,7 +65,7 @@ func cmdOpen(args []string, out, errw io.Writer) int {
 	}
 	defer clear(pw)
 
-	r, err := volume.Verify(vault, pw, *pim)
+	r, err := volume.Open(vault, pw, *pim)
 	if err != nil {
 		fmt.Fprintln(errw, "ironykeys:", err)
 		return exitError
@@ -77,8 +77,6 @@ func cmdOpen(args []string, out, errw io.Writer) int {
 	}
 	if r.Primary.Err != nil {
 		fmt.Fprintln(errw, "ironykeys: warning: the primary header is damaged; opening with the backup header. Copy your data out and recreate the vault.")
-	} else if r.Backup.Err != nil {
-		fmt.Fprintln(errw, "ironykeys: warning: the backup header is damaged; the vault opens but has no spare header.")
 	}
 
 	st, err := session.Open(session.OpenOptions{

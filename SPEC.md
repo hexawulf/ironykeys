@@ -2,7 +2,7 @@
 
 - Author: 0xWulf
 - Drafted: 2026-11-16
-- Status: DRAFT — nothing is implemented yet
+- Status: IMPLEMENTED (v0.1)
 
 IronyKeys is a small command-line tool for Raspberry Pi and other Linux hosts
 that creates and opens a single fixed-size encrypted vault file. The vault uses

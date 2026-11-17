@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/hexawulf/ironykeys/internal/header"
 	"github.com/hexawulf/ironykeys/internal/kdf"
@@ -123,41 +124,87 @@ func (r *Result) Wipe() {
 	}
 }
 
+func openVault(path string) (*os.File, Layout, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, Layout{}, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, Layout{}, err
+	}
+	if !fi.Mode().IsRegular() {
+		f.Close()
+		return nil, Layout{}, fmt.Errorf("%s is not a regular file", path)
+	}
+	l, err := CheckLayout(fi.Size())
+	if err != nil {
+		f.Close()
+		return nil, Layout{}, err
+	}
+	return f, l, nil
+}
+
 // Verify checks the password against the primary and the backup header and
 // checks each against the supported profile. It only reads the file. The
 // returned error is for failures to read the file at all; per-header
 // outcomes are in the Result.
 func Verify(path string, password []byte, pim int) (*Result, error) {
-	l, err := Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(path)
+	f, l, err := openVault(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	// Re-check the size on the open file so the offsets below are safe even
-	// if the file changed between Stat and Open.
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if l, err = CheckLayout(fi.Size()); err != nil {
-		return nil, err
-	}
 
 	r := &Result{Layout: l}
-	if r.Primary, err = readHeader(f, 0, l, password, pim); err != nil {
-		return nil, err
+	var perr, berr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		r.Primary, perr = readHeader(f, 0, l, password, pim)
+	}()
+	go func() {
+		defer wg.Done()
+		r.Backup, berr = readHeader(f, l.BackupOff, l, password, pim)
+	}()
+	wg.Wait()
+	if perr != nil {
+		r.Wipe()
+		return nil, perr
 	}
-	if r.Backup, err = readHeader(f, l.BackupOff, l, password, pim); err != nil {
-		return nil, err
+	if berr != nil {
+		r.Wipe()
+		return nil, berr
 	}
 	if r.Primary.Err == nil && r.Backup.Err == nil &&
 		*r.Primary.Header != *r.Backup.Header {
 		r.Backup.Header.Wipe()
 		r.Backup = HeaderResult{Err: errors.New("backup header does not match the primary header")}
+	}
+	return r, nil
+}
+
+// Open checks the primary header first and falls back to the backup header
+// only if the primary is damaged, avoiding a second PBKDF2 derivation in the
+// normal case.
+func Open(path string, password []byte, pim int) (*Result, error) {
+	f, l, err := openVault(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := &Result{Layout: l}
+	if r.Primary, err = readHeader(f, 0, l, password, pim); err != nil {
+		return nil, err
+	}
+	if r.Primary.Err == nil {
+		return r, nil
+	}
+	if r.Backup, err = readHeader(f, l.BackupOff, l, password, pim); err != nil {
+		return nil, err
 	}
 	return r, nil
 }

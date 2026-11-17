@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"github.com/hexawulf/ironykeys/internal/header"
@@ -57,7 +58,10 @@ with --password-fd N. Under sudo only descriptor 0 survives, so use
 open, close and formatting need root: run them with sudo.
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	_ = unix.Mlockall(unix.MCL_CURRENT | unix.MCL_FUTURE)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
 
 func run(args []string, out, errw io.Writer) int {
 	if len(args) == 0 {
@@ -292,11 +296,12 @@ func cmdVerify(args []string, out, errw io.Writer) int {
 // noHeader reports why neither header is usable and returns the exit code.
 func noHeader(r *volume.Result, errw io.Writer) int {
 	pe, be := r.Primary.Err, r.Backup.Err
+	noMatch := func(err error) bool { return err == nil || errors.Is(err, header.ErrNoMatch) }
 	switch {
 	case errors.Is(pe, volume.ErrProfile) || errors.Is(be, volume.ErrProfile):
 		fmt.Fprintln(errw, "ironykeys: the password is right but this volume is outside the supported profile; open it with VeraCrypt.")
 		return exitProfile
-	case errors.Is(pe, header.ErrNoMatch) && errors.Is(be, header.ErrNoMatch):
+	case noMatch(pe) && noMatch(be):
 		fmt.Fprintln(errw, "ironykeys: wrong password or PIM, or not a VeraCrypt volume of the supported profile.")
 		return exitNoMatch
 	}
@@ -348,10 +353,13 @@ func readPassword(fd int, confirm bool) ([]byte, error) {
 		}
 		f := os.NewFile(uintptr(fd), "password-fd")
 		b, err := io.ReadAll(io.LimitReader(f, kdf.MaxPasswordLen+2))
+		defer clear(b)
 		if err != nil {
 			return nil, fmt.Errorf("reading password from fd %d: %w", fd, err)
 		}
-		pw = bytes.TrimRight(b, "\r\n")
+		trimmed := bytes.TrimRight(b, "\r\n")
+		pw = make([]byte, len(trimmed))
+		copy(pw, trimmed)
 	} else {
 		tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 		if err != nil {

@@ -136,6 +136,29 @@ func TestVerifyDamagedBackup(t *testing.T) {
 	}
 }
 
+func TestOpenFastPathAndFallback(t *testing.T) {
+	// Healthy primary: Open must succeed without touching the backup header.
+	r, err := Open(fixture, []byte(fixturePass), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Wipe()
+	if r.Primary.Err != nil || r.Backup.Header != nil || r.Backup.Err != nil {
+		t.Fatalf("Open primary: %v, backup: %+v", r.Primary.Err, r.Backup)
+	}
+	// Damaged primary: Open falls back to the backup header.
+	p := copyFixture(t)
+	overwrite(t, p, 0, 512)
+	r2, err := Open(p, []byte(fixturePass), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Wipe()
+	if r2.Primary.Err == nil || r2.Backup.Err != nil || r2.Usable() != r2.Backup.Header {
+		t.Fatalf("Open fallback primary: %v, backup: %v", r2.Primary.Err, r2.Backup.Err)
+	}
+}
+
 func TestVerifyResizedFile(t *testing.T) {
 	// A valid header in a file of the wrong size is a profile mismatch.
 	p := copyFixture(t)
