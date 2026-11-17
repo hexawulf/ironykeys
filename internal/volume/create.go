@@ -142,22 +142,11 @@ func updateHeaders(path string, h *header.Header, password []byte, pim int, offs
 	if _, err := kdf.Iterations(pim); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	f, l, err := openVault(path, os.O_RDWR)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file", path)
-	}
-	l, err := CheckLayout(fi.Size())
-	if err != nil {
-		return err
-	}
 	if err := CheckProfile(h, l); err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/hexawulf/ironykeys/internal/kdf"
 	"github.com/hexawulf/ironykeys/internal/session"
 	"github.com/hexawulf/ironykeys/internal/volume"
 )
@@ -32,10 +31,6 @@ func cmdOpen(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return exitUsage
 	}
-	if _, err := kdf.Iterations(*pim); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitUsage
-	}
 	if !needRoot("open", errw) {
 		return exitError
 	}
@@ -44,14 +39,8 @@ func cmdOpen(args []string, out, errw io.Writer) int {
 	if len(pos) == 2 {
 		mountpoint = pos[1]
 	}
-	// Cheap checks first, so a doomed open does not ask for the password.
-	if _, err := volume.Stat(vault); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitError
-	}
-	if loop, _ := session.LoopFor(vault); loop != "" {
-		fmt.Fprintf(errw, "ironykeys: %s is already open (%s).\n", vault, loop)
-		return exitBusy
+	if rc := checkVault(vault, *pim, "close it first", errw); rc != exitOK {
+		return rc
 	}
 	own, err := session.InvokingUser()
 	if err != nil {

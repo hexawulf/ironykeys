@@ -394,6 +394,19 @@ sudo ironykeys open keys.vc
 
 Do a restore test on a second machine before you rely on a vault as the only copy of anything.
 
+### Growing a vault
+
+A vault is a fixed-size file by design and is never resized in place. To move to a larger vault, create a new one, open both, and copy the files over (the old vault stays intact until you verify the new one):
+
+```bash
+sudo ironykeys create ~/vaults/keys-512m.vc --size 512M
+sudo ironykeys open ~/vaults/keys.vc
+sudo ironykeys open ~/vaults/keys-512m.vc
+cp -a ~/IronyKeys/keys/. ~/IronyKeys/keys-512m/
+sudo ironykeys close keys
+sudo ironykeys close keys-512m
+```
+
 ---
 
 ## 🛡️ Security model and limits

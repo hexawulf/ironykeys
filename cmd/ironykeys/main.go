@@ -255,6 +255,27 @@ func cmdCreate(args []string, out, errw io.Writer) int {
 	return exitOK
 }
 
+// checkVault validates pim, checks that vault is a regular file of valid size,
+// and optionally requires the vault to be closed. Returns 0 on success or an
+// exit code on failure.
+func checkVault(vault string, pim int, closedAction string, errw io.Writer) int {
+	if _, err := kdf.Iterations(pim); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitUsage
+	}
+	if _, err := volume.Stat(vault); err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	if closedAction != "" {
+		if loop, _ := session.LoopFor(vault); loop != "" {
+			fmt.Fprintf(errw, "ironykeys: %s is already open (%s); %s.\n", vault, loop, closedAction)
+			return exitBusy
+		}
+	}
+	return exitOK
+}
+
 func cmdVerify(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(errw)
@@ -265,14 +286,8 @@ func cmdVerify(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return exitUsage
 	}
-	if _, err := kdf.Iterations(*pim); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitUsage
-	}
-	// Fail on a bad path before asking for the password.
-	if _, err := volume.Stat(pos[0]); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitError
+	if rc := checkVault(pos[0], *pim, "", errw); rc != exitOK {
+		return rc
 	}
 	pw, err := readPassword(*pwfd, false)
 	if err != nil {
@@ -314,10 +329,6 @@ func cmdPasswd(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return exitUsage
 	}
-	if _, err := kdf.Iterations(*pim); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitUsage
-	}
 	targetPIM := *pim
 	if *newPIM >= 0 {
 		targetPIM = *newPIM
@@ -328,32 +339,22 @@ func cmdPasswd(args []string, out, errw io.Writer) int {
 		return exitUsage
 	}
 	vault := pos[0]
-	if _, err := volume.Stat(vault); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitError
-	}
-	if loop, _ := session.LoopFor(vault); loop != "" {
-		fmt.Fprintf(errw, "ironykeys: %s is open (%s); close it before changing the password.\n", vault, loop)
-		return exitBusy
+	if rc := checkVault(vault, *pim, "close it before changing the password", errw); rc != exitOK {
+		return rc
 	}
 
 	var oldPW, newPW []byte
 	if *pwfd >= 0 {
 		oldPW, newPW, err = readPasswordPair(*pwfd)
-		if err != nil {
-			fmt.Fprintln(errw, "ironykeys:", err)
-			return exitError
-		}
-		defer clear(oldPW)
-		defer clear(newPW)
 	} else {
 		oldPW, err = promptPassword("Current vault password: ", "", false)
-		if err != nil {
-			fmt.Fprintln(errw, "ironykeys:", err)
-			return exitError
-		}
-		defer clear(oldPW)
 	}
+	if err != nil {
+		fmt.Fprintln(errw, "ironykeys:", err)
+		return exitError
+	}
+	defer clear(oldPW)
+	defer clear(newPW)
 
 	r, err := volume.Verify(vault, oldPW, *pim)
 	if err != nil {
@@ -402,18 +403,9 @@ func cmdHeaderRestore(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return exitUsage
 	}
-	if _, err := kdf.Iterations(*pim); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitUsage
-	}
 	vault := pos[0]
-	if _, err := volume.Stat(vault); err != nil {
-		fmt.Fprintln(errw, "ironykeys:", err)
-		return exitError
-	}
-	if loop, _ := session.LoopFor(vault); loop != "" {
-		fmt.Fprintf(errw, "ironykeys: %s is open (%s); close it before repairing headers.\n", vault, loop)
-		return exitBusy
+	if rc := checkVault(vault, *pim, "close it before repairing headers", errw); rc != exitOK {
+		return rc
 	}
 	pw, err := readPassword(*pwfd, false)
 	if err != nil {
@@ -437,21 +429,17 @@ func cmdHeaderRestore(args []string, out, errw io.Writer) int {
 	if pe != nil && be != nil {
 		return noHeader(r, errw)
 	}
-	var targetOff int64
-	var which string
-	h := r.Usable()
+	targetOff := r.Layout.BackupOff
+	which := "backup header from primary header"
 	if pe != nil {
 		targetOff = 0
 		which = "primary header from backup header"
-	} else {
-		targetOff = r.Layout.BackupOff
-		which = "backup header from primary header"
 	}
 	if *dry {
 		fmt.Fprintf(out, "Dry run, nothing written.\nWould restore %s of %s (offset %d).\n", which, vault, targetOff)
 		return exitOK
 	}
-	if err := volume.RepairHeader(vault, targetOff, h, pw, *pim); err != nil {
+	if err := volume.RepairHeader(vault, targetOff, r.Usable(), pw, *pim); err != nil {
 		fmt.Fprintln(errw, "ironykeys:", err)
 		return exitError
 	}
