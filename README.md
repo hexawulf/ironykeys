@@ -72,7 +72,7 @@ Hidden volumes, keyfiles, cipher cascades, other ciphers or hashes, system encry
 
 ## 📌 Status
 
-Version `0.1.0-dev`. All commands below are implemented and tested on `arm64` (Raspberry Pi 5, Ubuntu 26.04) and `amd64` against VeraCrypt 1.26.31 and `cryptsetup` 2.8.4. The full design and byte layout are in [SPEC.md](SPEC.md).
+Version `0.1.0`. All commands below are implemented and tested on `arm64` (Raspberry Pi 5, Ubuntu 26.04) and `amd64` against VeraCrypt 1.26.31 and `cryptsetup` 2.8.4. The full design and byte layout are in [SPEC.md](SPEC.md).
 
 ---
 

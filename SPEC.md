@@ -293,7 +293,7 @@ sudo ./interop.test -test.v
 | M1 | `verify`, `info` | DONE 2026-11-16. Reads the VeraCrypt-made fixture; unit tests pass |
 | M2 | `create` (unformatted vault) | DONE 2026-11-16. VeraCrypt 1.26.31 and cryptsetup 2.8.4 open the result and read each other's writes, with and without a PIM |
 | M3 | `open`, `close`, `status`, formatting | DONE 2026-11-16. Interop matrix (exFAT and ext4, with and without PIM, both directions) and failure tests pass on a Raspberry Pi (arm64, Ubuntu 26.04) |
-| M4 | Release | README, Makefile and arm64 + amd64 builds done 2026-11-16. Not tagged yet; the amd64 build is untested beyond compiling |
+| M4 | Release | DONE 2026-11-17. Tagged `v0.1.0` with `arm64` and `amd64` binaries |
 | M5 | Real use | Real vault created and first off-host backup verified 2026-11-16. Open: scheduled backup, restore test on a second machine |
 
 ## 10. Open decisions

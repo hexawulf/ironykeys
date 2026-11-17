@@ -1,5 +1,5 @@
 # IronyKeys build helpers. Recipe lines start with a tab.
-VERSION ?= 0.1.0-dev+$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION ?= 0.1.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 PREFIX  ?= /usr/local
 

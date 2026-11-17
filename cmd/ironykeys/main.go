@@ -22,7 +22,7 @@ import (
 	"github.com/hexawulf/ironykeys/internal/volume"
 )
 
-var version = "0.1.0-dev"
+var version = "0.1.0"
 
 // Exit codes, SPEC.md section 4.2.
 const (
