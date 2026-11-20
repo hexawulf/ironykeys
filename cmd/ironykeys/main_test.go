@@ -17,8 +17,8 @@ func TestCheckPasswordFD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	if err := checkPasswordFD(int(r.Fd())); err != nil {
 		t.Errorf("pipe rejected: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestCheckPasswordFD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := checkPasswordFD(int(f.Fd())); err != nil {
 		t.Errorf("regular file rejected: %v", err)
 	}
@@ -40,14 +40,14 @@ func TestCheckPasswordFD(t *testing.T) {
 		if err := checkPasswordFD(int(k.Fd())); err == nil {
 			t.Errorf("%s accepted as a password source", p)
 		}
-		k.Close()
+		_ = k.Close()
 	}
 	// Devices and closed descriptors.
 	if n, err := os.Open("/dev/null"); err == nil {
 		if err := checkPasswordFD(int(n.Fd())); err == nil {
 			t.Error("/dev/null accepted")
 		}
-		n.Close()
+		_ = n.Close()
 	}
 	if err := checkPasswordFD(987654); err == nil {
 		t.Error("closed descriptor accepted")
@@ -74,13 +74,15 @@ func runWithFD(t *testing.T, input string, args ...string) (int, string, string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	if _, err := w.WriteString(input); err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	var out, errb bytes.Buffer
-	fullArgs := append(args, "--password-fd", fmt.Sprint(r.Fd()))
+	fullArgs := append(append([]string(nil), args...), "--password-fd", fmt.Sprint(r.Fd()))
 	rc := run(fullArgs, &out, &errb)
 	return rc, out.String(), errb.String()
 }
@@ -125,8 +127,12 @@ func TestPasswdAndHeaderRestoreCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteAt(make([]byte, 512), 0)
-	f.Close()
+	if _, err := f.WriteAt(make([]byte, 512), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if rc, _, _ := runWithFD(t, "pass2\n", "verify", vault, "--pim", "2"); rc != exitOneHeaderOK {
 		t.Fatalf("verify with damaged primary: rc=%d, want %d", rc, exitOneHeaderOK)
@@ -139,9 +145,16 @@ func TestPasswdAndHeaderRestoreCLI(t *testing.T) {
 	}
 
 	// Damage backup header -> header-restore repairs it -> verify exits 0.
-	f, _ = os.OpenFile(vault, os.O_WRONLY, 0)
-	f.WriteAt(make([]byte, 512), 4<<20-volume.DataOffset)
-	f.Close()
+	f, err = os.OpenFile(vault, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt(make([]byte, 512), 4<<20-volume.DataOffset); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if rc, _, errStr := runWithFD(t, "pass2\n", "header-restore", vault, "--pim", "2"); rc != exitOK {
 		t.Fatalf("header-restore backup: rc=%d err=%s", rc, errStr)
 	}

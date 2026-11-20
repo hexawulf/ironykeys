@@ -1,0 +1,43 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - interop
+
+linters:
+  enable:
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        # IronyKeys is a CLI that explicitly opens user-supplied vault paths.
+        - G304
+        - G703
+        # Fixed system tools (losetup/dmsetup/mount/mkfs/blkid) run with a hardcoded PATH.
+        - G204
+        # /run/ironykeys state files contain non-secret paths/names for rootless `status`.
+        - G301
+        - G306
+        # Layout sizes are validated >= MinSize (4 MiB) before uint64 conversion.
+        - G115
+  exclusions:
+    rules:
+      # Test files intentionally use throwaway fixture passwords.
+      - path: _test\.go$
+        linters:
+          - gosec
+        text: "G101:"

@@ -35,9 +35,9 @@ func newVault(t *testing.T, fs string, pim int) string {
 		}
 	}
 	t.Cleanup(func() {
-		session.Close("ikt")
-		exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
-		exec.Command("cryptsetup", "close", csName).Run()
+		_, _ = session.Close("ikt")
+		_ = exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
+		_ = exec.Command("cryptsetup", "close", csName).Run()
 		if loop, _ := session.LoopFor(vault); loop != "" {
 			t.Errorf("loop device %s left attached to %s", loop, vault)
 		}
@@ -157,8 +157,8 @@ func TestVeraCryptMadeVaultOpens(t *testing.T) {
 			session.StateDir = t.TempDir()
 			vault := filepath.Join(t.TempDir(), "ikt.vc")
 			t.Cleanup(func() {
-				session.Close("ikt")
-				exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
+				_, _ = session.Close("ikt")
+				_ = exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
 			})
 			run(t, "", "veracrypt", "--text", "--non-interactive", "--create", vault,
 				"--size=16M", "--volume-type=normal", "--encryption=AES", "--hash=SHA-512",
@@ -214,7 +214,9 @@ func TestOpenCloseFailures(t *testing.T) {
 		if _, err := f.WriteString("still writable"); err != nil {
 			t.Errorf("vault unusable after failed close: %v", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 		mustClose(t)
 		expectOpen(t, vault, false)
 	})
@@ -226,9 +228,16 @@ func TestOpenCloseFailures(t *testing.T) {
 		put(t, filepath.Join(mp, "keep"), "survives header damage")
 		mustClose(t)
 
-		f, _ := os.OpenFile(vault, os.O_WRONLY, 0)
-		f.WriteAt(make([]byte, 512), 0)
-		f.Close()
+		f, err := os.OpenFile(vault, os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteAt(make([]byte, 512), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 		r, _ := volume.Verify(vault, []byte(pass), pim)
 		if r.Primary.Err == nil || r.Backup.Err != nil {
 			t.Fatalf("primary: %v, backup: %v", r.Primary.Err, r.Backup.Err)
@@ -280,9 +289,16 @@ func TestOpenCloseFailures(t *testing.T) {
 		mustClose(t)
 
 		// 1. Corrupt primary header, then repair via RepairHeader.
-		f, _ := os.OpenFile(vault, os.O_WRONLY, 0)
-		f.WriteAt(make([]byte, 512), 0)
-		f.Close()
+		f, err := os.OpenFile(vault, os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteAt(make([]byte, 512), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 		rDamaged, _ := volume.Verify(vault, []byte(pass), pim)
 		if err := volume.RepairHeader(vault, 0, rDamaged.Usable(), []byte(pass), pim); err != nil {
 			t.Fatalf("RepairHeader: %v", err)

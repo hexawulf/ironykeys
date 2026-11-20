@@ -263,7 +263,7 @@ func attach(vault, mapping string, h *header.Header, l volume.Layout, readOnly b
 		dmArgs = append(dmArgs, "--readonly")
 	}
 	if _, err = tool(table, "dmsetup", dmArgs...); err != nil {
-		tool(nil, "losetup", "-d", loop)
+		_, _ = tool(nil, "losetup", "-d", loop)
 		return "", err
 	}
 	return loop, nil
@@ -379,7 +379,7 @@ func Open(o OpenOptions) (st *State, err error) {
 	if err != nil {
 		return nil, err
 	}
-	undo = append(undo, func() { detach(mapping, loop) })
+	undo = append(undo, func() { _ = detach(mapping, loop) })
 	dev := "/dev/mapper/" + mapping
 
 	// blkid exits 2 when it finds no filesystem signature.
@@ -401,7 +401,7 @@ func Open(o OpenOptions) (st *State, err error) {
 	if _, err = tool(nil, "mount", "-t", fs, "-o", opts, dev, mp); err != nil {
 		return nil, err
 	}
-	undo = append(undo, func() { tool(nil, "umount", mp) })
+	undo = append(undo, func() { _, _ = tool(nil, "umount", mp) })
 
 	st = &State{
 		Name: name, Vault: abs, Loop: loop, Mapping: mapping, Mountpoint: mp,
@@ -460,7 +460,7 @@ func prepareMountpoint(mp string, own Owner, undo *[]func()) (created bool, err 
 			return false, err
 		}
 		dir := d
-		*undo = append(*undo, func() { os.Remove(dir) })
+		*undo = append(*undo, func() { _ = os.Remove(dir) })
 		if err := os.Chown(d, own.UID, own.GID); err != nil {
 			return false, err
 		}
@@ -487,7 +487,7 @@ func Close(target string) (*State, error) {
 		return st, err
 	}
 	if st.CreatedMountpoint {
-		os.Remove(st.Mountpoint) // only succeeds if empty
+		_ = os.Remove(st.Mountpoint) // only succeeds if empty
 	}
 	return st, nil
 }

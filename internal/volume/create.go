@@ -65,7 +65,7 @@ func Create(path string, size int64, password []byte, pim int) (err error) {
 			err = cerr
 		}
 		if err != nil {
-			os.Remove(path)
+			_ = os.Remove(path)
 		}
 	}()
 
@@ -146,7 +146,7 @@ func updateHeaders(path string, h *header.Header, password []byte, pim int, offs
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := CheckProfile(h, l); err != nil {
 		return err
 	}

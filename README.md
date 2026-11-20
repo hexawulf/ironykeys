@@ -1,5 +1,7 @@
 # 🔐 IronyKeys
 
+[![CI](https://github.com/hexawulf/ironykeys/actions/workflows/ci.yml/badge.svg)](https://github.com/hexawulf/ironykeys/actions/workflows/ci.yml)
+
 **A small, zero-bloat command-line tool for Linux that keeps secrets in one fixed-size encrypted file.**
 The vault uses the standard VeraCrypt volume format (`AES-256-XTS`, `PBKDF2-HMAC-SHA512`), so the official VeraCrypt and `cryptsetup` can open it without IronyKeys.
 

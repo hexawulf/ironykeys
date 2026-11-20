@@ -241,7 +241,7 @@ func cmdCreate(args []string, out, errw io.Writer) int {
 		}
 		if err != nil {
 			// This run created the file, so removing it loses nothing.
-			os.Remove(pos[0])
+			_ = os.Remove(pos[0])
 			fmt.Fprintln(errw, "ironykeys: create failed, vault removed:", err)
 			return exitError
 		}
@@ -526,7 +526,7 @@ func promptPassword(prompt1, prompt2 string, confirm bool) ([]byte, error) {
 	if err != nil {
 		return nil, errors.New("no terminal to ask for the password; use --password-fd")
 	}
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 	fmt.Fprint(tty, prompt1)
 	pw, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(tty)

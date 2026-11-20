@@ -78,7 +78,9 @@ func writeAt(t *testing.T, dev string, off int64, b []byte) {
 	if err := f.Sync(); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func readAt(t *testing.T, path string, off int64, n int) []byte {
@@ -87,7 +89,7 @@ func readAt(t *testing.T, path string, off int64, n int) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b := make([]byte, n)
 	if _, err := f.ReadAt(b, off); err != nil {
 		t.Fatal(err)
@@ -114,8 +116,8 @@ func TestCreatedVaultOpensElsewhere(t *testing.T) {
 			}
 			// Best-effort teardown if a step below fails half way.
 			t.Cleanup(func() {
-				exec.Command("cryptsetup", "close", csName).Run()
-				exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
+				_ = exec.Command("cryptsetup", "close", csName).Run()
+				_ = exec.Command("veracrypt", "--text", "--non-interactive", "-d", vault).Run()
 			})
 
 			// 1. cryptsetup reads the header and agrees on every field.

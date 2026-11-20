@@ -63,7 +63,9 @@ func TestCreateRefusesExisting(t *testing.T) {
 	}
 	// A dangling symlink must not be followed either.
 	link := filepath.Join(t.TempDir(), "link.vc")
-	os.Symlink(filepath.Join(t.TempDir(), "target"), link)
+	if err := os.Symlink(filepath.Join(t.TempDir(), "target"), link); err != nil {
+		t.Fatal(err)
+	}
 	if err := Create(link, MinSize, []byte("x"), testPIM); err == nil {
 		t.Error("created through a symlink")
 	}

@@ -20,9 +20,9 @@ const (
 	// KeySize is the length of the header key and of the master key.
 	KeySize = 64
 
-	// FormatVersion and MinProgramVersion are the values VeraCrypt 1.26
-	// writes; IronyKeys writes the same.
-	FormatVersion     = 5
+	// FormatVersion is the header format version VeraCrypt 1.26 writes.
+	FormatVersion = 5
+	// MinProgramVersion is the minimum VeraCrypt version field IronyKeys writes.
 	MinProgramVersion = 0x010B
 
 	magic = "VERA"

@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	SectorSize     = 512
+	// SectorSize is the encryption sector size in bytes.
+	SectorSize = 512
+	// HeaderAreaSize is the size of each reserved header region in bytes.
 	HeaderAreaSize = 65536
 	// DataOffset is where the data area starts: after the primary header
 	// area and the (unused) hidden-volume header area.
@@ -131,16 +133,16 @@ func openVault(path string, flag int) (*os.File, Layout, error) {
 	}
 	fi, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, Layout{}, err
 	}
 	if !fi.Mode().IsRegular() {
-		f.Close()
+		_ = f.Close()
 		return nil, Layout{}, fmt.Errorf("%s is not a regular file", path)
 	}
 	l, err := CheckLayout(fi.Size())
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, Layout{}, err
 	}
 	return f, l, nil
@@ -155,7 +157,7 @@ func Verify(path string, password []byte, pim int) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := &Result{Layout: l}
 	var perr, berr error
@@ -197,7 +199,7 @@ func Open(path string, password []byte, pim int) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := &Result{Layout: l}
 	if r.Primary, err = readHeader(f, 0, l, password, pim); err != nil || r.Primary.Err == nil {

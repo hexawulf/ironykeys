@@ -39,7 +39,7 @@ func overwrite(t *testing.T, path string, off int64, n int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	junk := make([]byte, n)
 	rand.Read(junk)
 	if _, err := f.WriteAt(junk, off); err != nil {
@@ -72,7 +72,7 @@ func TestVerifyFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, _ := os.Open(fixture)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	ct := make([]byte, 1024)
 	if _, err := f.ReadAt(ct, DataOffset); err != nil {
 		t.Fatal(err)
